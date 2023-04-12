@@ -14,6 +14,8 @@ linters-settings:
 linters:
   enable-all: true
   disable:
+    - structcheck
+    - exhaustruct
     - prealloc
     - lll
     - dupl

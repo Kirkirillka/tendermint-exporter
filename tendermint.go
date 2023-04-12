@@ -46,7 +46,7 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 	tendermintLatestBlockTimeDiffGauge := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name:        "tendermint_latest_block_time_diff",
-			Help:        "Latest Block Time Differnece",
+			Help:        "Latest Block Time Difference",
 			ConstLabels: ConstLabels,
 		},
 	)

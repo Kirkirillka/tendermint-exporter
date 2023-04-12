@@ -23,7 +23,7 @@ var (
 	NodeAddress   string
 	TendermintRPC string
 	LogLevel      string
-	JsonOutput    bool
+	JSONOutput    bool
 	Limit         uint64
 
 	ChainID     string
@@ -71,7 +71,7 @@ func Execute(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Could not parse log level")
 	}
 
-	if JsonOutput {
+	if JSONOutput {
 		log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 	}
 
@@ -95,6 +95,10 @@ func Execute(cmd *cobra.Command, args []string) {
 	}
 
 	setStaticLabels()
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		TendermintHandler(w, r, grpcConn)
@@ -136,7 +140,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&LogLevel, "log-level", "info", "Logging level")
 	rootCmd.PersistentFlags().Uint64Var(&Limit, "limit", 1000, "Pagination limit for gRPC requests")
 	rootCmd.PersistentFlags().StringVar(&TendermintRPC, "tendermint-rpc", "http://localhost:26657", "Tendermint RPC address")
-	rootCmd.PersistentFlags().BoolVar(&JsonOutput, "json", false, "Output logs as JSON")
+	rootCmd.PersistentFlags().BoolVar(&JSONOutput, "json", false, "Output logs as JSON")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Could not start application")
