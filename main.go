@@ -96,7 +96,7 @@ func Execute(cmd *cobra.Command, args []string) {
 
 	setStaticLabels()
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
