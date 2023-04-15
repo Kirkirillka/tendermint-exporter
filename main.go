@@ -7,6 +7,7 @@ import (
 	"os"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -96,13 +97,12 @@ func Execute(cmd *cobra.Command, args []string) {
 
 	setStaticLabels()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		TendermintHandler(w, r, grpcConn)
 	})
+
+	// return default go system metrics
+	http.Handle("/", promhttp.Handler())
 
 	log.Info().Str("address", ListenAddress).Msg("Listening")
 	err = http.ListenAndServe(ListenAddress, nil)

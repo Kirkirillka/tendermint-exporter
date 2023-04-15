@@ -20,7 +20,7 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 	client, err := tmrpc.New(TendermintRPC, "/websocket")
 
 	if err != nil {
-		log.Fatal().Err(err).Msg("Could not create Tendermint client")
+		http.Error(w, "Could not create Tendermint client", http.StatusInternalServerError)
 	}
 
 	sublogger := log.With().
@@ -76,7 +76,7 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		response, err := client.Status(context.Background())
 
 		if err != nil {
-			log.Fatal().Err(err).Msg("Could not query Tendermint Node Status")
+			log.Err(err).Msg("Could not query Tendermint Node Status")
 			return
 		}
 
@@ -103,7 +103,7 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		response, err := client.NetInfo(context.Background())
 
 		if err != nil {
-			log.Fatal().Err(err).Msg("Could not query Tendermint Net Infromation")
+			log.Err(err).Msg("Could not query Tendermint Net Infromation")
 			return
 		}
 
@@ -119,7 +119,9 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 	wg.Wait()
 
-	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+	})
 	h.ServeHTTP(w, r)
 	sublogger.Info().
 		Str("method", "GET").
