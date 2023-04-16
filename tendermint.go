@@ -4,28 +4,31 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	tmrpc "github.com/tendermint/tendermint/rpc/client/http"
 	"google.golang.org/grpc"
 )
 
-func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
-	requestStart := time.Now()
+type TendermintError struct {
+	Message string
+}
+
+func (e *TendermintError) Error() string {
+	return e.Message
+}
+
+func GenerateMetrics(registry *prometheus.Registry, logger zerolog.Logger) error {
 
 	client, err := tmrpc.New(TendermintRPC, "/websocket")
 
 	if err != nil {
-		http.Error(w, "Could not create Tendermint client", http.StatusInternalServerError)
+		return fmt.Errorf("could not create tendermint client")
 	}
-
-	sublogger := log.With().
-		Str("request-id", uuid.New().String()).
-		Logger()
 
 	tendermintLatestBlockHeightGauge := prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -59,70 +62,61 @@ func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		},
 	)
 
-	registry := prometheus.NewRegistry()
 	registry.MustRegister(tendermintLatestBlockHeightGauge)
 	registry.MustRegister(tendermintLatestBlockTimeGauge)
 	registry.MustRegister(tendermintLatestBlockTimeDiffGauge)
 	registry.MustRegister(tendermintPeersGauge)
 
-	var wg sync.WaitGroup
+	// Node statistics
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sublogger.Debug().Msg("Started calculating Node statistics")
-		queryStart := time.Now()
+	nodeStatusResponse, err := client.Status(context.Background())
 
-		response, err := client.Status(context.Background())
+	if err != nil {
+		return fmt.Errorf("could not query tendermint node status")
+	}
 
-		if err != nil {
-			log.Err(err).Msg("Could not query Tendermint Node Status")
-			return
-		}
+	timeDifference := time.Since(nodeStatusResponse.SyncInfo.LatestBlockTime)
 
-		log.Info().Str("node_id", string(response.NodeInfo.DefaultNodeID)).Msg("Got node information from Tendermint")
+	tendermintLatestBlockHeightGauge.Set(float64(nodeStatusResponse.SyncInfo.LatestBlockHeight))
+	tendermintLatestBlockTimeGauge.Set(float64(nodeStatusResponse.SyncInfo.LatestBlockTime.Unix()))
+	tendermintLatestBlockTimeDiffGauge.Set(timeDifference.Seconds())
 
-		sublogger.Debug().
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying staking pool")
+	// NetInfo statistics
 
-		timeDifference := time.Since(response.SyncInfo.LatestBlockTime)
+	netInfoResponse, err := client.NetInfo(context.Background())
 
-		tendermintLatestBlockHeightGauge.Set(float64(response.SyncInfo.LatestBlockHeight))
-		tendermintLatestBlockTimeGauge.Set(float64(response.SyncInfo.LatestBlockTime.Unix()))
-		tendermintLatestBlockTimeDiffGauge.Set(timeDifference.Seconds())
+	if err != nil {
+		return fmt.Errorf("could not query tendermint net infromation")
+	}
 
-	}()
+	tendermintPeersGauge.Set(float64(netInfoResponse.NPeers))
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sublogger.Debug().Msg("Started calculating Peers")
-		queryStart := time.Now()
+	return nil
 
-		response, err := client.NetInfo(context.Background())
+}
 
-		if err != nil {
-			log.Err(err).Msg("Could not query Tendermint Net Infromation")
-			return
-		}
+func TendermintHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
 
-		log.Info().Str("peers", fmt.Sprint(response.NPeers)).Msg("Got node information from Tendermint")
+	registry := prometheus.NewRegistry()
 
-		sublogger.Debug().
-			Float64("request-time", time.Since(queryStart).Seconds()).
-			Msg("Finished querying staking pool")
+	requestStart := time.Now()
 
-		tendermintPeersGauge.Set(float64(response.NPeers))
+	sublogger := log.With().
+		Str("request-id", uuid.New().String()).
+		Logger()
 
-	}()
+	err := GenerateMetrics(registry, sublogger)
 
-	wg.Wait()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		sublogger.Err(err).Msg("Cannot generate metrics")
+	} else {
+		h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+			ErrorHandling: promhttp.ContinueOnError,
+		})
+		h.ServeHTTP(w, r)
+	}
 
-	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-		ErrorHandling: promhttp.ContinueOnError,
-	})
-	h.ServeHTTP(w, r)
 	sublogger.Info().
 		Str("method", "GET").
 		Str("endpoint", "/metrics").
